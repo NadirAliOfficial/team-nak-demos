@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>How an IBKR Trading Bot Works | Team NAK</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&display=swap">
+<style>
+  :root {
+    --bg:#f4f7f5; --panel:#ffffff; --ink:#0f1a15; --muted:#5b6b63; --line:#dfe6e2;
+    --brand:#0e9f5b; --brand-soft:#e2f5ec; --down:#d33b3b; --down-soft:#fbe7e7; --code:#eef3f0;
+    box-sizing:border-box;
+    padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg:#0c1310; --panel:#121b17; --ink:#e8f1ec; --muted:#93a59b; --line:#22322b;
+      --brand:#2ecf85; --brand-soft:#143024; --down:#ff6b6b; --down-soft:#3a1c1e; --code:#0c1310;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg:#0c1310; --panel:#121b17; --ink:#e8f1ec; --muted:#93a59b; --line:#22322b;
+    --brand:#2ecf85; --brand-soft:#143024; --down:#ff6b6b; --down-soft:#3a1c1e; --code:#0c1310;
+  }
+  * { box-sizing:border-box; }
+  html { scroll-padding-top:env(safe-area-inset-top,0px); }
+  html, body { margin:0; }
+  body { background:var(--bg); color:var(--ink); font-family:'Manrope',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif; -webkit-font-smoothing:antialiased; }
+  .wrap { max-width:720px; margin:0 auto; padding:20px 16px 28px; }
+  h1 { font-size:24px; margin:0 0 6px; font-weight:800; letter-spacing:-0.01em; }
+  .sub { margin:0 0 18px; color:var(--muted); font-size:14px; line-height:1.5; max-width:54ch; }
+  .ctrl { display:flex; gap:8px; align-items:center; margin-bottom:16px; flex-wrap:wrap; }
+  button { font:inherit; font-size:13px; font-weight:700; color:var(--ink); background:var(--panel); border:1px solid var(--line); border-radius:999px; padding:8px 14px; cursor:pointer; }
+  button:focus-visible, .node:focus-visible { outline:2px solid var(--brand); outline-offset:2px; }
+  .badge { margin-left:auto; font-size:12.5px; font-weight:700; padding:6px 12px; border-radius:999px; background:var(--brand-soft); color:var(--brand); }
+  .badge.bad { background:var(--down-soft); color:var(--down); }
+
+  .flow { position:relative; padding-left:56px; }
+  .rail { position:absolute; left:19px; top:24px; bottom:24px; width:2px; background:var(--line); border-radius:2px; }
+  .fill { position:absolute; left:0; top:0; width:2px; height:0; background:var(--brand); border-radius:2px; transition:height .7s ease, background .3s; }
+  .fill.bad { background:var(--down); }
+  .packet { position:absolute; left:-6px; top:0; width:14px; height:14px; border-radius:50%; background:var(--brand); box-shadow:0 0 0 5px var(--brand-soft); transition:top .7s ease, background .3s, box-shadow .3s; transform:translateY(-7px); }
+  .packet.bad { background:var(--down); box-shadow:0 0 0 5px var(--down-soft); }
+  ol { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:12px; }
+  .node { position:relative; background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:14px 16px; cursor:pointer; transition:border-color .3s, background .3s, box-shadow .3s; }
+  .dot { position:absolute; left:-56px; top:8px; width:40px; height:32px; display:grid; place-items:center; }
+  .dot span { width:28px; height:28px; border-radius:50%; background:var(--panel); border:2px solid var(--line); display:grid; place-items:center; font-size:12.5px; font-weight:800; color:var(--muted); transition:all .3s; }
+  .node h2 { margin:0; font-size:16px; font-weight:800; }
+  .tech { margin:2px 0 0; font-size:12.5px; color:var(--muted); font-weight:600; }
+  .more { max-height:0; opacity:0; overflow:hidden; transition:max-height .5s ease, opacity .4s ease, margin .4s; }
+  .more p { margin:0 0 8px; font-size:14px; line-height:1.5; }
+  code { display:block; font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:12.5px; background:var(--code); border:1px solid var(--line); border-radius:8px; padding:8px 10px; overflow-x:auto; white-space:pre; }
+  .node.done .dot span { background:var(--brand); border-color:var(--brand); color:#fff; }
+  .node.active { border-color:var(--brand); box-shadow:0 6px 22px rgba(14,159,91,.14); }
+  .node.active .dot span { border-color:var(--brand); color:var(--brand); }
+  .node.active .more { max-height:200px; opacity:1; margin-top:10px; }
+  .node.bad { border-color:var(--down); background:var(--down-soft); box-shadow:none; }
+  .node.bad .dot span { background:var(--down); border-color:var(--down); color:#fff; }
+  .node.skipped { opacity:.55; }
+  footer { margin-top:22px; display:flex; justify-content:space-between; gap:10px; font-size:12px; color:var(--muted); }
+  footer a { color:var(--brand); font-weight:700; text-decoration:none; }
+  @media (prefers-reduced-motion: reduce) { * { transition:none !important; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>How an IBKR trading bot works</h1>
+  <p class="sub">One signal, from idea to filled order. The bot checks every order against your rules before anything reaches the broker. Tap any step to jump to it.</p>
+
+  <div class="ctrl">
+    <button id="pp" type="button">Pause</button>
+    <button id="mode" type="button">Show a blocked order</button>
+    <span class="badge" id="badge">Order approved</span>
+  </div>
+
+  <div class="flow" id="flow">
+    <div class="rail"><div class="fill" id="fill"></div><div class="packet" id="pk"></div></div>
+    <ol id="nodes"></ol>
+  </div>
+
+  <footer><span>Example values shown for illustration.</span><a href="https://www.theteamnak.com/" target="_blank" rel="noopener">Built by Team NAK</a></footer>
+</div>
+
+<script>
+(function () {
+  const steps = [
+    { t: 'Signal fires', tech: 'Your strategy, indicator or TradingView alert',
+      d: 'The strategy decides it is time to act. This can be your own logic or an alert from another platform.',
+      c: '{ "signal": "BUY", "symbol": "SPY" }' },
+    { t: 'Bot reads the signal', tech: 'Python bot',
+      d: 'The bot validates the message and works out the order size from your risk settings.',
+      c: 'qty = 100   type = MKT   risk = 0.5% of equity' },
+    { t: 'Risk checks', tech: 'Guardrails before every order',
+      d: 'Position limits, daily loss limit, market hours and duplicate orders are all checked here.',
+      c: 'size OK   hours OK   daily loss OK   duplicate OK',
+      bd: 'One rule failed, so the order never leaves the bot. This is what protects the account when something looks wrong.',
+      bc: 'daily loss limit reached -> order blocked' },
+    { t: 'IB Gateway / TWS API', tech: 'Local connection to Interactive Brokers',
+      d: 'The approved order is sent through the Interactive Brokers API session the bot keeps open.',
+      c: 'placeOrder(SPY, BUY, 100, MKT)' },
+    { t: 'Interactive Brokers', tech: 'Order routed to the market',
+      d: 'IBKR routes the order and reports the fill back to the bot with the real price and quantity.',
+      c: 'FILLED  100 @ 541.20' },
+    { t: 'Alerts and logs', tech: 'Discord or Telegram, plus a trade log',
+      d: 'The result reaches you instantly and is saved, so every decision can be reviewed later.',
+      c: 'Discord: SPY BUY filled 100 @ 541.20',
+      bd: 'The skipped signal is still logged and reported, so nothing happens silently.',
+      bc: 'Discord: SPY BUY skipped (daily loss limit)' }
+  ];
+
+  const list = document.getElementById('nodes');
+  const els = steps.map((s, i) => {
+    const li = document.createElement('li');
+    li.className = 'node'; li.tabIndex = 0; li.setAttribute('role', 'button');
+    li.innerHTML = '<div class="dot"><span></span></div><h2></h2><p class="tech"></p><div class="more"><p></p><code></code></div>';
+    li.querySelector('.dot span').textContent = i + 1;
+    li.querySelector('h2').textContent = s.t;
+    li.querySelector('.tech').textContent = s.tech;
+    list.appendChild(li);
+    li.addEventListener('click', () => jump(i));
+    li.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); jump(i); } });
+    return li;
+  });
+
+  const flow = document.getElementById('flow');
+  const pk = document.getElementById('pk'), fill = document.getElementById('fill');
+  const badge = document.getElementById('badge');
+  let idx = 0, blocked = false, playing = true, timer = null, cycle = 0;
+
+  function place() {
+    const el = els[idx];
+    const y = el.offsetTop + 23 - 24; // rail starts 24px below flow top
+    pk.style.top = y + 'px'; fill.style.height = Math.max(0, y) + 'px';
+  }
+
+  function render() {
+    els.forEach((el, i) => {
+      const s = steps[i];
+      const isBlockNode = blocked && i === 2;
+      const skipped = blocked && (i === 3 || i === 4);
+      const useBad = blocked && (i === 2 || i === 5);
+      el.classList.toggle('active', i === idx);
+      el.classList.toggle('done', i < idx && !skipped);
+      el.classList.toggle('skipped', skipped);
+      el.classList.toggle('bad', isBlockNode && i <= idx);
+      const more = el.querySelector('.more');
+      more.querySelector('p').textContent = useBad && s.bd ? s.bd : s.d;
+      more.querySelector('code').textContent = useBad && s.bc ? s.bc : s.c;
+      el.setAttribute('aria-expanded', i === idx ? 'true' : 'false');
+    });
+    const bad = blocked && idx >= 2;
+    pk.classList.toggle('bad', bad); fill.classList.toggle('bad', bad);
+    badge.textContent = blocked ? 'Order blocked by risk rules' : 'Order approved';
+    badge.classList.toggle('bad', blocked);
+    document.getElementById('mode').textContent = blocked ? 'Show an approved order' : 'Show a blocked order';
+    place();
+  }
+
+  function next() {
+    if (blocked && idx === 2) idx = 5;
+    else if (idx < steps.length - 1) idx++;
+    else { idx = 0; cycle++; }
+    render();
+  }
+
+  function schedule() {
+    clearTimeout(timer);
+    if (!playing) return;
+    timer = setTimeout(() => { next(); schedule(); }, idx === steps.length - 1 ? 3600 : 2800);
+  }
+
+  function jump(i) { idx = i; render(); schedule(); }
+
+  document.getElementById('pp').addEventListener('click', e => {
+    playing = !playing; e.target.textContent = playing ? 'Pause' : 'Play';
+    if (playing) schedule(); else clearTimeout(timer);
+  });
+  document.getElementById('mode').addEventListener('click', () => {
+    blocked = !blocked; idx = 0; render(); schedule();
+  });
+  window.addEventListener('resize', place);
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(place);
+
+  render(); schedule();
+})();
+</script>
+</body>
+</html>

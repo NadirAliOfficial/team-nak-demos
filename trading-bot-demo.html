@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Trading Bot in Action | Team NAK</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&display=swap">
+<style>
+  :root {
+    --bg:#f4f7f5; --panel:#ffffff; --ink:#0f1a15; --muted:#5b6b63; --line:#dfe6e2;
+    --brand:#0e9f5b; --brand-soft:#e2f5ec; --up:#0e9f5b; --down:#d33b3b; --down-soft:#fbe7e7;
+    --grid:#e9eeeb; --ema-f:#2f6fe0; --ema-s:#b0781a;
+    box-sizing:border-box;
+    padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg:#0c1310; --panel:#121b17; --ink:#e8f1ec; --muted:#93a59b; --line:#22322b;
+      --brand:#2ecf85; --brand-soft:#143024; --up:#2ecf85; --down:#ff6b6b; --down-soft:#3a1c1e;
+      --grid:#1b2822; --ema-f:#6f9bff; --ema-s:#e2a848;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg:#0c1310; --panel:#121b17; --ink:#e8f1ec; --muted:#93a59b; --line:#22322b;
+    --brand:#2ecf85; --brand-soft:#143024; --up:#2ecf85; --down:#ff6b6b; --down-soft:#3a1c1e;
+    --grid:#1b2822; --ema-f:#6f9bff; --ema-s:#e2a848;
+  }
+  * { box-sizing:border-box; }
+  html { scroll-padding-top:env(safe-area-inset-top,0px); }
+  html, body { margin:0; height:100%; }
+  body { background:var(--bg); color:var(--ink); font-family:'Manrope',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif; -webkit-font-smoothing:antialiased; }
+  .num { font-variant-numeric:tabular-nums; }
+  .app { min-height:100%; display:flex; flex-direction:column; gap:12px; padding:14px; max-width:1180px; margin:0 auto; }
+  header { display:flex; justify-content:space-between; align-items:flex-start; gap:12px; }
+  h1 { font-size:22px; margin:0 0 4px; font-weight:800; letter-spacing:-0.01em; }
+  header p { margin:0; color:var(--muted); font-size:13.5px; line-height:1.45; max-width:52ch; }
+  .pill { display:flex; align-items:center; gap:8px; padding:8px 12px; border:1px solid var(--line); background:var(--panel); border-radius:999px; font-size:13px; font-weight:700; white-space:nowrap; }
+  .pill i { width:9px; height:9px; border-radius:50%; background:var(--muted); }
+  .pill.scan i { background:var(--ema-f); animation:pulse 1.4s ease-in-out infinite; }
+  .pill.long i { background:var(--up); animation:pulse 1s ease-in-out infinite; }
+  .pill.short i { background:var(--down); animation:pulse 1s ease-in-out infinite; }
+  @keyframes pulse { 50% { transform:scale(1.5); opacity:.5; } }
+  main { display:grid; grid-template-columns:1fr 300px; gap:12px; flex:1; min-height:0; }
+  .chart { position:relative; background:var(--panel); border:1px solid var(--line); border-radius:14px; overflow:hidden; min-height:420px; }
+  canvas { position:absolute; inset:0; width:100%; height:100%; display:block; }
+  .toast { position:absolute; left:12px; top:12px; max-width:calc(100% - 24px); width:290px; background:var(--panel); border:1px solid var(--line); border-left:4px solid var(--brand); border-radius:10px; padding:10px 12px; box-shadow:0 6px 24px rgba(0,0,0,.12); font-size:12.5px; line-height:1.45; opacity:0; transform:translateY(-8px); transition:opacity .25s, transform .25s; pointer-events:none; }
+  .toast.show { opacity:1; transform:none; }
+  .toast.bad { border-left-color:var(--down); }
+  .toast b { display:block; font-size:13px; margin-bottom:2px; }
+  .toast span { color:var(--muted); }
+  .side { display:flex; flex-direction:column; gap:12px; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:14px; }
+  .lbl { font-size:12px; color:var(--muted); font-weight:600; }
+  .big { font-size:30px; font-weight:800; letter-spacing:-0.02em; margin:2px 0 10px; }
+  .row { display:flex; justify-content:space-between; gap:10px; font-size:13.5px; padding:6px 0; border-top:1px solid var(--line); }
+  .row b { font-weight:700; }
+  .pos { color:var(--up); } .neg { color:var(--down); }
+  .trades { flex:1; min-height:120px; }
+  .trade { display:flex; justify-content:space-between; align-items:center; gap:8px; padding:8px 0; border-top:1px solid var(--line); font-size:13px; animation:slide .35s ease-out; }
+  .trade:first-of-type { border-top:0; }
+  .tag { font-size:11.5px; font-weight:800; padding:3px 8px; border-radius:6px; }
+  .tag.l { background:var(--brand-soft); color:var(--up); }
+  .tag.s { background:var(--down-soft); color:var(--down); }
+  .trade small { color:var(--muted); display:block; font-size:11.5px; }
+  .empty { color:var(--muted); font-size:13px; padding:10px 0; }
+  @keyframes slide { from { opacity:0; transform:translateY(-6px); } }
+  footer { display:flex; justify-content:space-between; gap:10px; color:var(--muted); font-size:12px; padding:2px 2px 6px; }
+  footer a { color:var(--brand); font-weight:700; text-decoration:none; }
+  @media (max-width: 820px) {
+    main { grid-template-columns:1fr; }
+    .chart { min-height:340px; height:50dvh; }
+    h1 { font-size:19px; }
+    header { flex-direction:column; }
+  }
+  @media (prefers-reduced-motion: reduce) { .pill i, .trade { animation:none; } }
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div>
+      <h1>Trading bot in action</h1>
+      <p>An EMA 9/21 crossover bot on SPY with a fixed stop and target. Simulated prices, not real trades.</p>
+    </div>
+    <div class="pill scan" id="pill"><i></i><span id="st">Scanning for a signal</span></div>
+  </header>
+  <main>
+    <section class="chart" id="chartBox">
+      <canvas id="cv"></canvas>
+      <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    </section>
+    <aside class="side">
+      <div class="card">
+        <div class="lbl">Account equity (simulated)</div>
+        <div class="big num" id="eq">$25,000.00</div>
+        <div class="row"><span>Open P&amp;L</span><b class="num" id="open">$0.00</b></div>
+        <div class="row"><span>Closed trades</span><b class="num" id="cnt">0</b></div>
+        <div class="row"><span>Win rate</span><b class="num" id="wr">n/a</b></div>
+      </div>
+      <div class="card trades">
+        <div class="lbl" style="margin-bottom:6px">Trade log</div>
+        <div id="log"><div class="empty">Waiting for the first signal.</div></div>
+      </div>
+    </aside>
+  </main>
+  <footer><span>Simulated demo. Past behavior of a demo says nothing about real results.</span><a href="https://www.theteamnak.com/" target="_blank" rel="noopener">Built by Team NAK</a></footer>
+</div>
+
+<script>
+(function () {
+  const $ = id => document.getElementById(id);
+  const cv = $('cv'), ctx = cv.getContext('2d'), box = $('chartBox');
+  const reduce = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+  let C = {}, cw = 0, ch = 0, dpr = 1;
+
+  function loadColors() {
+    const st = getComputedStyle(document.documentElement);
+    const g = n => st.getPropertyValue(n).trim();
+    C = { up:g('--up'), down:g('--down'), grid:g('--grid'), muted:g('--muted'), f:g('--ema-f'), s:g('--ema-s'), panel:g('--panel'), ink:g('--ink') };
+  }
+  loadColors();
+  if (window.matchMedia) matchMedia('(prefers-color-scheme: dark)').addEventListener('change', loadColors);
+
+  function resize() {
+    dpr = Math.min(window.devicePixelRatio || 1, 2);
+    cw = box.clientWidth; ch = box.clientHeight;
+    cv.width = cw * dpr; cv.height = ch * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  new ResizeObserver(resize).observe(box);
+  resize();
+
+  // ---------- simulation ----------
+  const N = 60, QTY = 100, SL = 0.003, TP = 0.005;
+  const a9 = 2 / 10, a21 = 2 / 22;
+  let price = 540, idc = 0, cIdx = 0, tickN = 0;
+  let candles = [], cur = null, e9 = 540, e21 = 540, prevDiff = 0;
+  let pos = null, markers = [], trades = [], equity = 25000, wins = 0, live = false;
+  const view = { lo: 530, hi: 550, init: false };
+
+  function newCandle() {
+    cur = { id: ++idc, o: price, h: price, l: price, c: price, e9: e9, e21: e21 };
+    candles.push(cur);
+    if (candles.length > 400) candles.shift();
+  }
+  newCandle();
+
+  function fmt(n) { return (n < 0 ? '-' : '') + '$' + Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+  function signed(n) { return (n >= 0 ? '+' : '-') + '$' + Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+
+  let toastTimer;
+  function toast(title, body, bad) {
+    const t = $('toast');
+    t.className = 'toast show' + (bad ? ' bad' : '');
+    t.innerHTML = '<b></b><span></span>';
+    t.firstChild.textContent = title; t.lastChild.textContent = body;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => t.classList.remove('show'), 4200);
+  }
+
+  function setStatus() {
+    const p = $('pill');
+    if (!pos) { p.className = 'pill scan'; $('st').textContent = 'Scanning for a signal'; }
+    else if (pos.dir === 1) { p.className = 'pill long'; $('st').textContent = 'Long SPY open'; }
+    else { p.className = 'pill short'; $('st').textContent = 'Short SPY open'; }
+  }
+
+  function openPos(dir) {
+    const entry = price;
+    pos = { dir, entry, id: candles[candles.length - 2].id, qty: QTY, sl: entry * (1 - dir * SL), tp: entry * (1 + dir * TP) };
+    markers.push({ id: candles[candles.length - 2].id, dir, price: entry, kind: 'in' });
+    setStatus();
+    if (live) toast('SPY ' + (dir === 1 ? 'LONG' : 'SHORT') + ' opened',
+      'Entry ' + entry.toFixed(2) + '  |  Stop ' + pos.sl.toFixed(2) + '  |  Target ' + pos.tp.toFixed(2));
+  }
+
+  function closePos(reason) {
+    const pnl = (price - pos.entry) * pos.dir * pos.qty;
+    equity += pnl;
+    if (pnl > 0) wins++;
+    trades.unshift({ dir: pos.dir, entry: pos.entry, exit: price, pnl, reason });
+    markers.push({ id: cur.id, price, pnl, kind: 'out' });
+    toast('SPY ' + (pos.dir === 1 ? 'LONG' : 'SHORT') + ' closed ' + signed(pnl), reason + '  |  Exit ' + price.toFixed(2), pnl < 0);
+    pos = null;
+    setStatus(); renderLog();
+  }
+
+  function checkExit() {
+    if (!pos) return;
+    if (pos.dir === 1) {
+      if (price >= pos.tp) closePos('Target hit');
+      else if (price <= pos.sl) closePos('Stop hit');
+    } else {
+      if (price <= pos.tp) closePos('Target hit');
+      else if (price >= pos.sl) closePos('Stop hit');
+    }
+  }
+
+  function closeCandle() {
+    cIdx++;
+    e9 += a9 * (cur.c - e9); e21 += a21 * (cur.c - e21);
+    cur.e9 = e9; cur.e21 = e21;
+    const diff = e9 - e21;
+    const up = prevDiff <= 0 && diff > 0, down = prevDiff >= 0 && diff < 0;
+    prevDiff = diff;
+    newCandle();
+    if (!live) return;
+    if (up || down) {
+      const dir = up ? 1 : -1;
+      if (pos && pos.dir !== dir) { closePos('Signal reversed'); }
+      if (!pos) openPos(dir);
+    }
+  }
+
+  function step() {
+    const drift = 0.0001 * Math.sin(cIdx / 6);
+    price *= 1 + drift + 0.0003 * (Math.random() + Math.random() - 1) * 1.8;
+    cur.c = price; cur.h = Math.max(cur.h, price); cur.l = Math.min(cur.l, price);
+    if (live) checkExit();
+    if (++tickN % 14 === 0) closeCandle();
+    updateStats();
+  }
+
+  // warm up history with no trading
+  for (let i = 0; i < 14 * 70; i++) step();
+  live = true;
+
+  function updateStats() {
+    const open = pos ? (price - pos.entry) * pos.dir * pos.qty : 0;
+    $('eq').textContent = fmt(equity + open);
+    const o = $('open');
+    o.textContent = pos ? signed(open) : '$0.00';
+    o.className = 'num ' + (open > 0 ? 'pos' : open < 0 ? 'neg' : '');
+    $('cnt').textContent = trades.length;
+    $('wr').textContent = trades.length ? Math.round(wins / trades.length * 100) + '%' : 'n/a';
+  }
+
+  function renderLog() {
+    const el = $('log');
+    if (!trades.length) return;
+    el.innerHTML = '';
+    trades.slice(0, 6).forEach(t => {
+      const d = document.createElement('div'); d.className = 'trade';
+      const left = document.createElement('div');
+      const tag = document.createElement('span'); tag.className = 'tag ' + (t.dir === 1 ? 'l' : 's'); tag.textContent = t.dir === 1 ? 'LONG' : 'SHORT';
+      const sm = document.createElement('small'); sm.textContent = t.entry.toFixed(2) + ' to ' + t.exit.toFixed(2) + '  |  ' + t.reason;
+      left.appendChild(tag); left.appendChild(sm);
+      const r = document.createElement('b'); r.className = 'num ' + (t.pnl >= 0 ? 'pos' : 'neg'); r.textContent = signed(t.pnl);
+      d.appendChild(left); d.appendChild(r); el.appendChild(d);
+    });
+  }
+
+  setInterval(step, reduce ? 140 : 70);
+
+  // ---------- drawing ----------
+  function niceStep(raw) {
+    const p = Math.pow(10, Math.floor(Math.log10(raw))), f = raw / p;
+    return (f < 1.5 ? 1 : f < 3.5 ? 2 : f < 7.5 ? 5 : 10) * p;
+  }
+
+  function tag(text, x, y, bg, fg) {
+    ctx.font = '700 11px Manrope, system-ui, sans-serif';
+    const w = ctx.measureText(text).width + 10;
+    ctx.fillStyle = bg; ctx.beginPath();
+    ctx.roundRect ? ctx.roundRect(x, y - 9, w, 18, 4) : ctx.rect(x, y - 9, w, 18);
+    ctx.fill();
+    ctx.fillStyle = fg; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+    ctx.fillText(text, x + 5, y + 0.5);
+  }
+
+  function draw() {
+    requestAnimationFrame(draw);
+    if (!cw) return;
+    ctx.clearRect(0, 0, cw, ch);
+    const padL = 8, padR = 64, padT = 16, padB = 12;
+    const pw = cw - padL - padR, ph = ch - padT - padB;
+    const vis = candles.slice(-N);
+    const base = vis[vis.length - 1].id;
+    let lo = Infinity, hi = -Infinity;
+    vis.forEach(c => { lo = Math.min(lo, c.l); hi = Math.max(hi, c.h); });
+    if (pos) { lo = Math.min(lo, pos.sl, pos.tp); hi = Math.max(hi, pos.sl, pos.tp); }
+    const span = (hi - lo) || 1; lo -= span * 0.08; hi += span * 0.08;
+    if (!view.init) { view.lo = lo; view.hi = hi; view.init = true; }
+    view.lo += (lo - view.lo) * 0.08; view.hi += (hi - view.hi) * 0.08;
+    const Y = p => padT + (view.hi - p) / (view.hi - view.lo) * ph;
+    const slot = pw / N;
+    const X = id => padL + (N - 1 - (base - id)) * slot + slot / 2;
+
+    // grid
+    const step = niceStep((view.hi - view.lo) / 5);
+    ctx.font = '600 11px Manrope, system-ui, sans-serif';
+    ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+    for (let p = Math.ceil(view.lo / step) * step; p < view.hi; p += step) {
+      const y = Y(p);
+      ctx.strokeStyle = C.grid; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(cw - padR, y); ctx.stroke();
+      ctx.fillStyle = C.muted; ctx.fillText(p.toFixed(2), cw - padR + 8, y);
+    }
+
+    // position zones
+    if (pos) {
+      const x0 = Math.max(padL, X(pos.id));
+      const zone = (a, b, col) => {
+        ctx.fillStyle = col; ctx.globalAlpha = 0.09;
+        ctx.fillRect(x0, Math.min(Y(a), Y(b)), cw - padR - x0, Math.abs(Y(a) - Y(b)));
+        ctx.globalAlpha = 1;
+      };
+      zone(pos.entry, pos.tp, C.up); zone(pos.entry, pos.sl, C.down);
+      const hline = (p, col, dash) => {
+        ctx.strokeStyle = col; ctx.lineWidth = 1.2; ctx.setLineDash(dash);
+        ctx.beginPath(); ctx.moveTo(x0, Y(p)); ctx.lineTo(cw - padR, Y(p)); ctx.stroke(); ctx.setLineDash([]);
+      };
+      hline(pos.tp, C.up, [5, 4]); hline(pos.sl, C.down, [5, 4]); hline(pos.entry, C.ink, [2, 3]);
+    }
+
+    // EMAs
+    const e9live = e9 + a9 * (price - e9), e21live = e21 + a21 * (price - e21);
+    const ema = (key, col) => {
+      ctx.strokeStyle = col; ctx.lineWidth = 1.6; ctx.beginPath();
+      vis.forEach((c, i) => {
+        const v = i === vis.length - 1 ? (key === 'e9' ? e9live : e21live) : c[key];
+        const x = X(c.id), y = Y(v);
+        i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+      });
+      ctx.stroke();
+    };
+    ema('e21', C.s); ema('e9', C.f);
+
+    // candles
+    const bw = Math.max(2, slot * 0.62);
+    vis.forEach(c => {
+      const x = X(c.id), upc = c.c >= c.o, col = upc ? C.up : C.down;
+      ctx.strokeStyle = col; ctx.fillStyle = col; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(x, Y(c.h)); ctx.lineTo(x, Y(c.l)); ctx.stroke();
+      const y1 = Y(Math.max(c.o, c.c)), y2 = Y(Math.min(c.o, c.c));
+      ctx.fillRect(x - bw / 2, y1, bw, Math.max(1.5, y2 - y1));
+    });
+
+    // markers
+    const firstId = vis[0].id;
+    markers = markers.filter(m => m.id >= firstId - 2);
+    markers.forEach(m => {
+      const x = X(m.id), y = Y(m.price);
+      if (m.kind === 'in') {
+        const col = m.dir === 1 ? C.up : C.down, s = 7;
+        ctx.fillStyle = col; ctx.beginPath();
+        if (m.dir === 1) { ctx.moveTo(x, y + 8); ctx.lineTo(x - s, y + 8 + s * 1.5); ctx.lineTo(x + s, y + 8 + s * 1.5); }
+        else { ctx.moveTo(x, y - 8); ctx.lineTo(x - s, y - 8 - s * 1.5); ctx.lineTo(x + s, y - 8 - s * 1.5); }
+        ctx.closePath(); ctx.fill();
+        ctx.fillStyle = col; ctx.textAlign = 'center'; ctx.font = '800 10px Manrope, system-ui, sans-serif';
+        ctx.fillText(m.dir === 1 ? 'BUY' : 'SELL', x, m.dir === 1 ? y + 34 : y - 34);
+      } else {
+        const col = m.pnl >= 0 ? C.up : C.down;
+        ctx.fillStyle = C.panel; ctx.strokeStyle = col; ctx.lineWidth = 2.2;
+        ctx.beginPath(); ctx.arc(x, y, 5.5, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+        ctx.fillStyle = col; ctx.textAlign = 'center'; ctx.font = '800 10.5px Manrope, system-ui, sans-serif';
+        ctx.fillText(signed(m.pnl), x, y - 16);
+      }
+    });
+
+    // axis tags
+    if (pos) {
+      tag('TP ' + pos.tp.toFixed(2), cw - padR + 4, Y(pos.tp), C.up, '#fff');
+      tag('SL ' + pos.sl.toFixed(2), cw - padR + 4, Y(pos.sl), C.down, '#fff');
+    }
+    const pc = cur.c >= cur.o ? C.up : C.down;
+    ctx.strokeStyle = pc; ctx.lineWidth = 1; ctx.setLineDash([2, 3]);
+    ctx.beginPath(); ctx.moveTo(padL, Y(price)); ctx.lineTo(cw - padR, Y(price)); ctx.stroke(); ctx.setLineDash([]);
+    tag(price.toFixed(2), cw - padR + 4, Y(price), pc, '#fff');
+
+    // legend
+    ctx.textAlign = 'left'; ctx.font = '700 11px Manrope, system-ui, sans-serif';
+    const lx = cw - padR - 150, ly = ch - 14;
+    ctx.fillStyle = C.f; ctx.fillRect(lx, ly - 1, 14, 3); ctx.fillStyle = C.muted; ctx.fillText('EMA 9', lx + 19, ly);
+    ctx.fillStyle = C.s; ctx.fillRect(lx + 72, ly - 1, 14, 3); ctx.fillStyle = C.muted; ctx.fillText('EMA 21', lx + 91, ly);
+  }
+  requestAnimationFrame(draw);
+  updateStats();
+})();
+</script>
+</body>
+</html>
